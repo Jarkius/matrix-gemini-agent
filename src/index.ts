@@ -21,6 +21,9 @@ import { GeminiClient } from "./gemini/api";
 import { YouTubeAnalyzer } from "./gemini/youtube";
 import { SoulConnector } from "./soul/connector";
 import { ResearchHistory } from "./db/history";
+import { MissionDatabase } from "./db/missions";
+import { MorpheusCoordinator } from "./agents/coordinator";
+import type { ResearchDepth } from "./interfaces/mission";
 
 // Configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -31,6 +34,10 @@ const gemini = new GeminiClient(GEMINI_API_KEY);
 const youtube = new YouTubeAnalyzer(gemini);
 const soul = new SoulConnector(MATRIX_PATH);
 const history = new ResearchHistory();
+const missionDb = new MissionDatabase();
+
+// Coordinator (initialized after databases)
+let coordinator: MorpheusCoordinator | null = null;
 
 // Create MCP Server
 const server = new Server(
@@ -142,6 +149,71 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: "gemini_deep_research",
+    description: "Perform multi-step deep research with parallel agents and Matrix context awareness. Decomposes complex queries, gathers information in parallel, and synthesizes comprehensive insights.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        topic: {
+          type: "string",
+          description: "The topic or complex question to research",
+        },
+        depth: {
+          type: "string",
+          enum: ["quick", "standard", "deep"],
+          description: "Research depth: quick (1 step), standard (3 steps), deep (5+ steps with synthesis)",
+          default: "standard",
+        },
+        loadContext: {
+          type: "boolean",
+          description: "Load relevant Matrix docs before research",
+          default: true,
+        },
+        harvestLearnings: {
+          type: "boolean",
+          description: "Extract and export learnings to Matrix",
+          default: true,
+        },
+      },
+      required: ["topic"],
+    },
+  },
+  {
+    name: "gemini_research_status",
+    description: "Check status of an ongoing deep research mission.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        missionId: {
+          type: "string",
+          description: "The mission/plan ID to check",
+        },
+      },
+      required: ["missionId"],
+    },
+  },
+  {
+    name: "gemini_harvest_learnings",
+    description: "Export synthesized learnings from research history to Matrix as human-readable markdown files.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        since: {
+          type: "string",
+          description: "ISO date to export from (optional, exports all if not specified)",
+        },
+      },
+    },
+  },
+  {
+    name: "gemini_stats",
+    description: "Get statistics about research missions and agent pool.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
 ];
 
 // Register tool list handler
@@ -153,8 +225,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
-  // Load soul for each request
-  const soulSeed = await soul.load();
+  // Load soul for each request (convert null to undefined for function signatures)
+  const soulSeed = (await soul.load()) ?? undefined;
 
   try {
     switch (name) {
@@ -202,6 +274,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "gemini_deep_research": {
+        if (!coordinator) {
+          return {
+            content: [{ type: "text", text: "Error: Coordinator not initialized" }],
+            isError: true,
+          };
+        }
+        const {
+          topic,
+          depth = "standard",
+          loadContext = true,
+          harvestLearnings = true,
+        } = args as {
+          topic: string;
+          depth?: ResearchDepth;
+          loadContext?: boolean;
+          harvestLearnings?: boolean;
+        };
+
+        const result = await coordinator.research(topic, depth, {
+          loadContext,
+          harvestLearnings,
+          exportToMatrix: harvestLearnings,
+        });
+
+        return {
+          content: [{ type: "text", text: result.output }],
+        };
+      }
+
+      case "gemini_research_status": {
+        if (!coordinator) {
+          return {
+            content: [{ type: "text", text: "Error: Coordinator not initialized" }],
+            isError: true,
+          };
+        }
+        const { missionId } = args as { missionId: string };
+        const status = await coordinator.getStatus(missionId);
+        return {
+          content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
+        };
+      }
+
+      case "gemini_harvest_learnings": {
+        if (!coordinator) {
+          return {
+            content: [{ type: "text", text: "Error: Coordinator not initialized" }],
+            isError: true,
+          };
+        }
+        const { since } = args as { since?: string };
+        const exported = await coordinator.exportLearnings(since);
+        return {
+          content: [{ type: "text", text: `Exported ${exported} learnings to Matrix` }],
+        };
+      }
+
+      case "gemini_stats": {
+        if (!coordinator) {
+          return {
+            content: [{ type: "text", text: "Error: Coordinator not initialized" }],
+            isError: true,
+          };
+        }
+        const poolStats = coordinator.getPoolStats();
+        const dbStats = await coordinator.getStats();
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({ pool: poolStats, missions: dbStats }, null, 2),
+          }],
+        };
+      }
+
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -229,14 +376,20 @@ async function main() {
     console.error("[Matrix Gemini Agent] Running in soulless mode (Matrix not found)");
   }
 
-  // Initialize history database
+  // Initialize databases
   await history.init();
+  await missionDb.init();
+
+  // Initialize coordinator with all components
+  coordinator = new MorpheusCoordinator(gemini, missionDb, history, soul);
+  console.error("[Matrix Gemini Agent] Morpheus Coordinator initialized");
 
   // Connect transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   console.error("[Matrix Gemini Agent] MCP server running");
+  console.error("[Matrix Gemini Agent] Available tools: gemini_research, gemini_deep_research, gemini_youtube, gemini_summarize, gemini_compare, gemini_history, gemini_harvest_learnings, gemini_stats");
 }
 
 main().catch((error) => {

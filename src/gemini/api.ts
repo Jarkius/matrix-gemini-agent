@@ -6,14 +6,19 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// Default to Gemini 3 Flash (gemini-2.0-flash retired March 2026)
+const DEFAULT_MODEL = "gemini-3-flash";
+
 export class GeminiClient {
   private client: GoogleGenerativeAI | null = null;
-  private model: string = "gemini-2.0-flash";
+  private model: string;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, model?: string) {
+    this.model = model || process.env.GEMINI_MODEL || DEFAULT_MODEL;
     if (apiKey) {
       this.client = new GoogleGenerativeAI(apiKey);
     }
+    console.error(`[Gemini] Using model: ${this.model}`);
   }
 
   /**

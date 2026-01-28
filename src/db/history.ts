@@ -20,7 +20,7 @@ export class ResearchHistory {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    this.dbPath = dbPath || `${process.env.HOME}/.local/share/matrix-gemini-agent/history.db`;
+    this.dbPath = dbPath || `${import.meta.dir}/../../data/history.db`;
   }
 
   /**

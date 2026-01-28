@@ -37,7 +37,7 @@ export class YouTubeAnalyzer {
 
     for (const pattern of patterns) {
       const match = url.match(pattern);
-      if (match) return match[1];
+      if (match && match[1]) return match[1];
     }
     return null;
   }

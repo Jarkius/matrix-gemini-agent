@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "gemini-agent": {
+      "command": "bun",
+      "args": ["run", "src/index.ts"],
+      "env": {
+        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
+        "GEMINI_MODEL": "gemini-3-flash",
+        "MATRIX_PATH": "/Users/jarkius/workspace/The-matrix"
+      }
+    }
+  }
+}
