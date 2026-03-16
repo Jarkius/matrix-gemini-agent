@@ -4,19 +4,19 @@
  * Wraps Google's Generative AI SDK for Matrix integration.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 // Default to Gemini 3 Flash (gemini-2.0-flash retired March 2026)
 const DEFAULT_MODEL = "gemini-3-flash";
 
 export class GeminiClient {
-  private client: GoogleGenerativeAI | null = null;
+  private client: GoogleGenAI | null = null;
   private model: string;
 
   constructor(apiKey?: string, model?: string) {
     this.model = model || process.env.GEMINI_MODEL || DEFAULT_MODEL;
     if (apiKey) {
-      this.client = new GoogleGenerativeAI(apiKey);
+      this.client = new GoogleGenAI({ apiKey });
     }
     console.error(`[Gemini] Using model: ${this.model}`);
   }
@@ -46,17 +46,12 @@ export class GeminiClient {
       ? `${soulSeed}\n\nYou are Morpheus, the research agent of The Matrix. ${depthInstructions[depth as keyof typeof depthInstructions] || depthInstructions.standard}`
       : `You are a research assistant. ${depthInstructions[depth as keyof typeof depthInstructions] || depthInstructions.standard}`;
 
-    const model = this.client.getGenerativeModel({ model: this.model });
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemPrompt}\n\nResearch topic: ${topic}` }],
-        },
-      ],
+    const result = await this.client.models.generateContent({
+      model: this.model,
+      contents: `${systemPrompt}\n\nResearch topic: ${topic}`,
     });
 
-    return result.response.text();
+    return result.text || "";
   }
 
   /**
@@ -83,17 +78,12 @@ export class GeminiClient {
       ? `Fetch and summarize this URL: ${content}`
       : `Summarize this content:\n\n${content}`;
 
-    const model = this.client.getGenerativeModel({ model: this.model });
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemPrompt}\n\n${contentPrompt}` }],
-        },
-      ],
+    const result = await this.client.models.generateContent({
+      model: this.model,
+      contents: `${systemPrompt}\n\n${contentPrompt}`,
     });
 
-    return result.response.text();
+    return result.text || "";
   }
 
   /**
@@ -116,17 +106,12 @@ export class GeminiClient {
       .map((s, i) => `Source ${i + 1}: ${s}`)
       .join("\n\n");
 
-    const model = this.client.getGenerativeModel({ model: this.model });
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemPrompt}\n\n${sourcesText}` }],
-        },
-      ],
+    const result = await this.client.models.generateContent({
+      model: this.model,
+      contents: `${systemPrompt}\n\n${sourcesText}`,
     });
 
-    return result.response.text();
+    return result.text || "";
   }
 
   /**
@@ -139,17 +124,12 @@ export class GeminiClient {
 
     const fullPrompt = soulSeed ? `${soulSeed}\n\n${prompt}` : prompt;
 
-    const model = this.client.getGenerativeModel({ model: this.model });
-    const result = await model.generateContent({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: fullPrompt }],
-        },
-      ],
+    const result = await this.client.models.generateContent({
+      model: this.model,
+      contents: fullPrompt,
     });
 
-    return result.response.text();
+    return result.text || "";
   }
 
   // Mock responses for when API is not configured
